@@ -24,15 +24,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Detect Directory & Install Dependencies
+      - name: Fix Directory Structure & Install
         run: |
-          # التاكد من وجود package.json ونقله للرئيسي اذا كان داخل مجلد فرعي
-          if [ ! -f "package.json" ]; then
-            SUBDIR=$(find . -maxdepth 2 -name "package.json" | head -n 1 | xargs dirname)
-            if [ -n "$SUBDIR" ]; then
-              echo "Fixing subfolder location from $SUBDIR"
-              cp -r $SUBDIR/* .
-            fi
+          # البحث عن مجلد src ونقل محتوياته للرئيسي إذا كان داخل مجلد فرعي
+          SRCDIR=$(find . -maxdepth 3 -type d -name "src" | head -n 1)
+          if [ "$SRCDIR" != "./src" ] && [ -n "$SRCDIR" ]; then
+            PARENTDIR=$(dirname "$SRCDIR")
+            echo "Copying from $PARENTDIR"
+            cp -r $PARENTDIR/* .
           fi
           npm install --legacy-peer-deps
 
