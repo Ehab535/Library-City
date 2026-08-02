@@ -16,10 +16,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
+          node-version: 20
 
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
@@ -27,15 +24,24 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Dependencies
-        run: bun install
+      - name: Detect Directory & Install Dependencies
+        run: |
+          # التاكد من وجود package.json ونقله للرئيسي اذا كان داخل مجلد فرعي
+          if [ ! -f "package.json" ]; then
+            SUBDIR=$(find . -maxdepth 2 -name "package.json" | head -n 1 | xargs dirname)
+            if [ -n "$SUBDIR" ]; then
+              echo "Fixing subfolder location from $SUBDIR"
+              cp -r $SUBDIR/* .
+            fi
+          fi
+          npm install --legacy-peer-deps
 
       - name: Build Web App
-        run: bun run build
+        run: npx vite build
 
-      - name: Install & Setup Capacitor for Android
+      - name: Setup Capacitor Android App
         run: |
-          bun add @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android --legacy-peer-deps
           npx cap init "City Library" "com.citylibrary.app" --web-dir dist
           npx cap add android
           npx cap copy android
