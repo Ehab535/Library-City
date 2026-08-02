@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the platform",
+      "type": "object",
+      "properties": {
+        "fullName": {
+          "type": "string",
+          "description": "User's full name in Arabic (4 parts)",
+          "pattern": "^[\u0600-\u06FF]+(?: [\u0600-\u06FF]+){3,}$"
+        },
+        "email": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["student", "admin"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["fullName", "email", "role"]
+    },
+    "Presence": {
+      "title": "Presence",
+      "description": "User's online presence and current activity",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "isOnline": {
+          "type": "boolean"
+        },
+        "lastSeen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "currentActivity": {
+          "type": "string",
+          "description": "What the user is currently viewing"
+        },
+        "contentId": {
+          "type": "string",
+          "description": "ID of the content they are viewing (optional)"
+        }
+      },
+      "required": ["userId", "isOnline", "lastSeen", "fullName"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "Registered users"
+    },
+    "presence/{userId}": {
+      "schema": {
+        "$ref": "#/entities/Presence"
+      },
+      "description": "Real-time presence and activity tracking"
+    }
+  }
+}

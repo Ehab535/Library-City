@@ -1,0 +1,6 @@
+{
+  "name": "Educational Content Viewer",
+  "description": "Secure educational platform with single-account login, custom video player, and protected PDF viewer with download prevention.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
