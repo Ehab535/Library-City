@@ -129,7 +129,7 @@
   const CURRENCY = /(^|\s)(جنيه|جنيهات|جنية|جنيهات|ج|جم|ج م|ليره|ليرات|بوند|egp|le|pounds?)(?=\s|$)/g;
   const INCOME = ['قبضت', 'قبض', 'مرتب', 'المرتب', 'استلمت', 'جالي', 'جاتلي', 'جالى', 'دخلي', 'دخل لي', 'كسبت', 'اتحولي', 'حولولي', 'حولي', 'بعتولي', 'بعتلي', 'مكافاه', 'عيديه', 'اخدت فلوس', 'رجعلي', 'رجعولي'].map(normalize);
   const TRANSFER = ['سحبت', 'حولت', 'نقلت', 'شحنت', 'حطيت', 'ايداع', 'اودعت'].map(normalize);
-  const FILLER = ['دفعت', 'دفعنا', 'صرفت', 'اشتريت', 'اشترينا', 'جبت', 'جبنا', 'خدت', 'اخدت', 'دفع', 'النهارده', 'انهارده', 'امبارح', 'اول', 'امس', 'حق', 'ب', 'علي', 'في', 'عشان', 'من', 'تمن', 'ثمن', 'انا', 'كده', 'حوالي', 'بتاع', 'بتاعه', 'بتاعت', 'على'].map(normalize);
+  const FILLER = ['دفعت', 'دفعنا', 'صرفت', 'اشتريت', 'اشترينا', 'جبت', 'جبنا', 'خدت', 'اخدت', 'دفع', 'النهارده', 'انهارده', 'امبارح', 'اول', 'امس', 'حق', 'ب', 'علي', 'في', 'عشان', 'من', 'تمن', 'ثمن', 'انا', 'كده', 'حوالي', 'بتاع', 'بتاعه', 'بتاعت', 'على', 'قبضت', 'استلمت', 'سحبت', 'حولت', 'نقلت', 'شحنت', 'حطيت', 'جالي', 'جاتلي'].map(normalize);
 
   function findAccounts(seg, accounts) {
     const hits = [];
@@ -184,8 +184,20 @@
     const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     if (/(^|\s)(اول|قبل) امبارح/.test(t) || /(^|\s)اول امس/.test(t)) d.setDate(d.getDate() - 2);
     else if (/(^|\s)(امبارح|امس|البارح)(\s|$)/.test(t)) d.setDate(d.getDate() - 1);
+    else {
+      const ago = t.match(/(^|\s)من (\d{1,2}) (يوم|ايام)(\s|$)/);
+      const wd = t.match(WEEKDAY_RE);
+      if (/(^|\s)من يومين(\s|$)/.test(t)) d.setDate(d.getDate() - 2);
+      else if (ago) d.setDate(d.getDate() - Math.min(+ago[2], 60));
+      else if (wd) { const target = WEEKDAYS[wd[3]]; d.setDate(d.getDate() - ((d.getDay() - target + 7) % 7)); }
+    }
     return isoDate(d);
   }
+
+  // "يوم الخميس" او "الخميس اللي فات" = اخر خميس عدى (او النهارده لو هو الخميس)
+  const WEEKDAYS = { 'حد': 0, 'احد': 0, 'اتنين': 1, 'اثنين': 1, 'تلات': 2, 'ثلاثاء': 2, 'تلاتاء': 2, 'اربع': 3, 'اربعاء': 3, 'خميس': 4, 'جمعه': 5, 'سبت': 6 };
+  const WEEKDAY_RE = new RegExp('(^|\\s)(يوم )?ال(' + Object.keys(WEEKDAYS).join('|') + ')( اللي فاتت?)?(?=\\s|$)');
+  const DATE_WORDS = new RegExp('(^|\\s)(من يومين|من \\d{1,2} (يوم|ايام)|(يوم )?ال(' + Object.keys(WEEKDAYS).join('|') + ')( اللي فاتت?)?)(?=\\s|$)', 'g');
 
   function cleanNote(original) {
     let s = ' ' + original + ' ';
@@ -227,8 +239,9 @@
     const today = ctx.today || new Date();
     const raw = normalize(text);
     if (!raw) return [];
-    const t = wordsToNumbers(raw).replace(CURRENCY, ' $1 ').replace(/\s+/g, ' ').trim();
+    let t = wordsToNumbers(raw).replace(CURRENCY, ' $1 ').replace(/\s+/g, ' ').trim();
     const date = detectDate(t, today);
+    t = t.replace(DATE_WORDS, ' ').replace(/\s+/g, ' ').trim();
     const globalAcc = findAccounts(t, accounts).hits;
     const globalIncome = INCOME.some(k => new RegExp('(^|\\s)' + k + '(\\s|$)').test(t));
 

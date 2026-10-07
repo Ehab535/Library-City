@@ -1,0 +1,52 @@
+name: Build Masroofy APK
+
+on:
+  push:
+    paths:
+      - 'masroofy/**'
+      - '.github/workflows/masroofy-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: masroofy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: masroofy/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install
+        run: npm ci
+
+      - name: Parser tests
+        run: npm test
+
+      - name: Sync web assets into Android
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: masroofy/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk masroofy-1.1.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Masroofy-APK
+          path: masroofy/masroofy-1.1.apk

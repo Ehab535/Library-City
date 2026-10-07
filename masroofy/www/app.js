@@ -28,20 +28,27 @@
       accounts: clone(MasroofyDefaults.accounts),
       categories: clone(MasroofyDefaults.categories),
       txns: [],
+      recurring: [],
       budget: { monthly: 0 },
-      settings: { theme: 'system', defaultAccount: 'cash', currency: 'ج.م', voiceLang: 'ar-EG', autoSave: true }
+      settings: { theme: 'system', defaultAccount: 'cash', currency: 'ج.م', voiceLang: 'ar-EG', autoSave: true, hide: false, reminder: { on: false, time: '21:00' } }
     };
   }
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
-        const d = JSON.parse(raw);
-        const f = fresh();
-        return Object.assign(f, d, { settings: Object.assign(f.settings, d.settings || {}), budget: Object.assign(f.budget, d.budget || {}) });
+        return merge(JSON.parse(raw));
       }
     } catch (e) { /* storage غير متاح */ }
     return fresh();
+  }
+  // يدمج بيانات محفوظه (او نسخه احتياطيه قديمه) مع القيم الافتراضيه
+  function merge(d) {
+    const f = fresh();
+    const out = Object.assign(f, d, { settings: Object.assign(f.settings, d.settings || {}), budget: Object.assign(f.budget, d.budget || {}) });
+    if (!Array.isArray(out.recurring)) out.recurring = [];
+    out.settings.reminder = Object.assign({ on: false, time: '21:00' }, out.settings.reminder || {});
+    return out;
   }
   let S = load();
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
@@ -52,6 +59,8 @@
     return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
   };
   const money = n => `<span class="num">${fmt(n)}</span>`;
+  const secret = n => S.settings.hide ? '<span class="num">••••</span>' : money(n);
+  const secretTxt = n => S.settings.hide ? '••••' : fmt(n);
   const today = () => iso(new Date());
   function iso(d) { const z = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()); }
   const accById = id => S.accounts.find(a => a.id === id);
@@ -132,16 +141,19 @@
 
     let html = `
       <div class="hero">
-        <div class="label">إجمالي فلوسك في كل الحسابات</div>
-        <div class="big">${money(total)}<small>${cur$}</small></div>
+        <div class="hero-top">
+          <div><div class="label">إجمالي فلوسك في كل الحسابات</div>
+          <div class="big">${secret(total)}<small>${cur$}</small></div></div>
+          <button class="eye" id="eyeBtn" aria-label="${S.settings.hide ? 'إظهار الأرصدة' : 'إخفاء الأرصدة'}">${eyeIcon(S.settings.hide)}</button>
+        </div>
         <div class="hero-row">
-          <div><div class="k">صرفت الشهر ده</div><div class="v num">${fmt(spent)}</div></div>
-          <div><div class="k">دخل الشهر ده</div><div class="v num">${fmt(income)}</div></div>
-          <div><div class="k">الصافي</div><div class="v num">${income - spent >= 0 ? '' : '−'}${fmt(Math.abs(income - spent))}</div></div>
+          <div><div class="k">صرفت الشهر ده</div><div class="v num">${secretTxt(spent)}</div></div>
+          <div><div class="k">دخل الشهر ده</div><div class="v num">${secretTxt(income)}</div></div>
+          <div><div class="k">الصافي</div><div class="v num">${S.settings.hide ? '••••' : (income - spent >= 0 ? '' : '−') + fmt(Math.abs(income - spent))}</div></div>
         </div>
       </div>
       <div class="accounts-strip">
-        ${S.accounts.map(a => `<button class="acc-chip" data-acc="${esc(a.id)}"><span class="n"><span class="acc-dot" style="background:${ACC_COLORS[a.type] || ACC_COLORS.other}"></span>${esc(a.name)}</span><span class="b">${money(balance(a.id))}</span></button>`).join('')}
+        ${S.accounts.map(a => `<button class="acc-chip" data-acc="${esc(a.id)}"><span class="n"><span class="acc-dot" style="background:${ACC_COLORS[a.type] || ACC_COLORS.other}"></span>${esc(a.name)}</span><span class="b">${secret(balance(a.id))}</span></button>`).join('')}
       </div>`;
 
     if (S.budget.monthly > 0) {
@@ -177,11 +189,49 @@
       ${cats.length ? `<div class="donut-wrap">${donut(cats, spent)}<div class="legend">${cats.slice(0, 7).map(x => `<div class="legend-row"><span class="sw" style="background:${x.c.color}"></span><span class="nm">${esc(x.c.icon)} ${esc(x.c.name)}</span><span><span class="num">${fmt(x.v)}</span> <span class="pc num">${Math.round(x.v / spent * 100)}%</span></span></div>`).join('')}</div></div>` : `<div class="hint">مفيش مصاريف في الشهر ده.</div>`}
     </div>`;
 
+    html += insightCard(spent, cats);
+    html += catBudgetsCard(byCat);
+
     html += `<div class="card"><div class="card-head"><h2>الصرف اليومي</h2><span class="sub">متوسط ${money(spent / dayCountForAvg())} في اليوم</span></div>${dailyBars()}</div>`;
 
-    html += `<div class="card"><div class="card-head"><h2>آخر العمليات</h2><button class="link" id="seeAll">عرض الكل</button></div><div class="list">${S.txns.slice().sort(sortTx).slice(0, 6).map(txRow).join('')}</div></div>`;
+    html += `<div class="card"><div class="card-head"><h2>آخر العمليات</h2><button class="link" id="seeAll">عرض الكل</button></div><div class="list">${list.length ? list.slice().sort(sortTx).slice(0, 6).map(txRow).join('') : '<div class="hint">مفيش عمليات في الشهر ده.</div>'}</div></div>`;
     el.innerHTML = html; bindHome(el);
   }
+  function eyeIcon(hidden) {
+    return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>${hidden ? '<path d="M3 3l18 18"/>' : ''}</svg>`;
+  }
+
+  // مقارنه بنفس الفتره من الشهر اللي فات
+  function insightCard(spent, cats) {
+    const now = new Date(); const isCur = now.getFullYear() === cur.y && now.getMonth() === cur.m;
+    const py = cur.m === 0 ? cur.y - 1 : cur.y, pm = cur.m === 0 ? 11 : cur.m - 1;
+    const upTo = isCur ? now.getDate() : 31;
+    const prevKey = monthKey(py, pm);
+    const prev = S.txns.filter(t => t.type === 'expense' && t.date.slice(0, 7) === prevKey && +t.date.slice(8, 10) <= upTo).reduce((s, t) => s + t.amount, 0);
+    if (!(prev > 0) || !(spent > 0)) return '';
+    const diff = (spent - prev) / prev * 100;
+    const more = diff > 0;
+    const same = Math.abs(diff) < 3;
+    const period = isCur ? `لحد يوم ${upTo}` : '';
+    const top = cats[0];
+    return `<div class="card insight"><span class="ic">${same ? '⚖️' : more ? '📈' : '📉'}</span><div style="min-width:0">
+      <div class="t">${same ? 'صرفك قريب من الشهر اللي فات' : `صرفت ${more ? 'أكتر' : 'أقل'} من ${MONTHS[pm]} بـ <span class="num ${more ? 'up' : 'down'}">${Math.round(Math.abs(diff))}%</span>`}</div>
+      <div class="d">${period ? period + ': ' : ''}${money(spent)} مقابل ${money(prev)}${top ? ` · أكتر حاجة: ${esc(top.c.icon)} ${esc(top.c.name)}` : ''}</div></div></div>`;
+  }
+
+  function catBudgetsCard(byCat) {
+    const withBudget = S.categories.filter(c => c.kind === 'expense' && c.budget > 0);
+    if (!withBudget.length) return '';
+    const rows = withBudget.map(c => {
+      const used = byCat[c.id] || 0; const pct = used / c.budget * 100;
+      const cls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : '';
+      const left = c.budget - used;
+      return `<div class="cb-row"><div class="top"><span>${esc(c.icon)} ${esc(c.name)}</span><span class="m">${left >= 0 ? `فاضل ${money(left)}` : `زيادة ${money(-left)}`} من ${money(c.budget)}</span></div>
+        <div class="budget-bar"><i class="${cls}" style="width:${Math.min(100, pct).toFixed(1)}%"></i></div></div>`;
+    }).join('');
+    return `<div class="card"><div class="card-head"><h2>ميزانية التصنيفات</h2><span class="sub">${MONTHS[cur.m]}</span></div>${rows}</div>`;
+  }
+
   function dayCountForAvg() {
     const d = new Date();
     if (d.getFullYear() === cur.y && d.getMonth() === cur.m) return d.getDate();
@@ -190,6 +240,7 @@
   function bindHome(el) {
     $$('[data-example]', el).forEach(b => b.addEventListener('click', () => { $('#smartInput').value = b.dataset.example; handleText(b.dataset.example); }));
     const demo = $('#loadDemo', el); if (demo) demo.addEventListener('click', loadDemo);
+    const eye = $('#eyeBtn', el); if (eye) eye.addEventListener('click', () => { S.settings.hide = !S.settings.hide; save(); render(); });
     const all = $('#seeAll', el); if (all) all.addEventListener('click', () => go('tx'));
     $$('[data-tx]', el).forEach(b => b.addEventListener('click', () => openTxSheet(S.txns.find(t => t.id === b.dataset.tx))));
     $$('[data-acc]', el).forEach(b => b.addEventListener('click', () => { txFilter = { type: 'all', acc: b.dataset.acc, q: '' }; go('tx'); }));
@@ -247,7 +298,7 @@
     const sub = t.type === 'transfer' ? (t.note || dayLabel(t.date)) : `${c ? c.name : ''} · ${a ? a.name : ''}`;
     const sign = t.type === 'expense' ? '−' : t.type === 'income' ? '+' : '';
     return `<button class="tx" data-tx="${esc(t.id)}"><span class="tx-ic" style="${c && t.type !== 'transfer' ? `background:color-mix(in srgb, ${c.color} 16%, var(--surface))` : ''}">${esc(icon)}</span>
-      <span class="tx-main"><div class="tx-t">${esc(title)}${t.source === 'voice' ? ' <span class="pill">🎙</span>' : ''}</div><div class="tx-s">${esc(sub)}</div></span>
+      <span class="tx-main"><div class="tx-t">${esc(title)}${t.source === 'voice' ? ' <span class="pill">🎙</span>' : t.source === 'recurring' ? ' <span class="pill">🔁</span>' : ''}</div><div class="tx-s">${esc(sub)}</div></span>
       <span class="tx-a ${t.type} num">${sign}${fmt(t.amount)}</span></button>`;
   }
 
@@ -288,11 +339,11 @@
     const total = S.accounts.reduce((s, a) => s + balance(a.id), 0);
     el.innerHTML = `
       <div class="card">
-        <div class="card-head"><h2>حساباتك</h2><span class="sub">الإجمالي ${money(total)} ${esc(S.settings.currency)}</span></div>
+        <div class="card-head"><h2>حساباتك</h2><span class="sub">الإجمالي ${secret(total)} ${esc(S.settings.currency)}</span></div>
         <div class="list">${S.accounts.map(a => `
           <button class="tx" data-edit-acc="${esc(a.id)}"><span class="tx-ic" style="background:color-mix(in srgb, ${ACC_COLORS[a.type] || ACC_COLORS.other} 16%, var(--surface));color:${ACC_COLORS[a.type] || ACC_COLORS.other}">${accIcon(a.type)}</span>
           <span class="tx-main"><div class="tx-t">${esc(a.name)}</div><div class="tx-s">${ACC_TYPES[a.type] || ''}${a.id === S.settings.defaultAccount ? ' · الافتراضي' : ''}</div></span>
-          <span class="tx-a num">${fmt(balance(a.id))}</span></button>`).join('')}</div>
+          <span class="tx-a num">${secretTxt(balance(a.id))}</span></button>`).join('')}</div>
       </div>
       <div class="actions"><button class="btn primary" id="addAcc">+ حساب جديد</button><button class="btn" id="doTransfer">⇄ تحويل بين حساباتك</button></div>
       <p class="hint">الرصيد = الرصيد الافتتاحي + الدخل − المصاريف ± التحويلات. عدّل الرصيد الافتتاحي لو عايز الرقم يطابق اللي معاك فعلاً.</p>`;
@@ -317,6 +368,13 @@
         <div class="field"><label for="setDefAcc">الحساب الافتراضي لما متقولش الحساب</label><select class="input" id="setDefAcc">${S.accounts.map(a => `<option value="${esc(a.id)}" ${a.id === S.settings.defaultAccount ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>
         <div class="field"><label for="setCur">العملة</label><input class="input" id="setCur" value="${esc(S.settings.currency)}"></div>
         <div class="set-row"><div><div class="t">حفظ مباشر بعد الصوت</div><div class="d">لو مقفولة، هيوريك العملية تراجعها الأول</div></div><button class="btn small" id="setAuto">${S.settings.autoSave ? 'شغّال' : 'مقفول'}</button></div>
+        <div class="set-row"><div><div class="t">إخفاء الأرصدة</div><div class="d">يخبي الفلوس من الشاشة لو حد جنبك</div></div><button class="btn small" id="setHide">${S.settings.hide ? 'مخفية' : 'ظاهرة'}</button></div>
+        ${plugin('LocalNotifications') ? `<div class="set-row"><div><div class="t">تذكير يومي</div><div class="d">يفكرك تسجل مصاريف اليوم</div></div><div style="display:flex;gap:8px;align-items:center">${S.settings.reminder.on ? `<input class="input num" type="time" id="setRemTime" value="${esc(S.settings.reminder.time)}" style="width:auto;padding:7px 8px">` : ''}<button class="btn small" id="setRem">${S.settings.reminder.on ? 'شغّال' : 'مقفول'}</button></div></div>` : ''}
+      </div>
+      <div class="card"><div class="card-head"><h2>العمليات المتكررة</h2><button class="link" id="addRec">+ متكررة</button></div>
+        ${S.recurring.length ? `<div class="list">${S.recurring.map(r => { const c = catById(r.categoryId); const a = accById(r.accountId); const to = accById(r.toAccountId);
+          return `<button class="tx" data-rec="${esc(r.id)}"><span class="tx-ic">${r.type === 'transfer' ? '⇄' : esc(c ? c.icon : '🔁')}</span><span class="tx-main"><div class="tx-t">${esc(r.note || (r.type === 'transfer' ? 'تحويل' : c ? c.name : ''))}</div><div class="tx-s">يوم ${r.day} كل شهر · ${esc(a ? a.name : '')}${to ? ' ← ' + esc(to.name) : ''}</div></span><span class="tx-a ${r.type} num">${fmt(r.amount)}</span></button>`; }).join('')}</div>`
+          : '<p class="hint">زي الإيجار والمرتب والنت. سجّلها مرة واحدة وفعّل «تتكرر كل شهر»، والتطبيق هيسجلها لوحده في معادها.</p>'}
       </div>
       <div class="card"><div class="card-head"><h2>التصنيفات</h2><button class="link" id="addCat">+ تصنيف</button></div>
         <div class="list">${S.categories.map(c => `<button class="tx" data-edit-cat="${esc(c.id)}"><span class="tx-ic" style="background:color-mix(in srgb, ${c.color} 16%, var(--surface))">${esc(c.icon)}</span><span class="tx-main"><div class="tx-t">${esc(c.name)}</div><div class="tx-s">${c.kind === 'income' ? 'دخل' : 'مصروف'} · ${(c.keywords || []).length} كلمة بيتعرف بيها</div></span><span></span></button>`).join('')}</div>
@@ -334,19 +392,24 @@
         تاريخ: <code>امبارح دفعت 30 ميكروباص</code><br>
         لو غيرت تصنيف حاجة سجلتها بالصوت، التطبيق بيتعلم ويحطها صح المرة الجاية.</p>
       </div>
-      <p class="hint" style="text-align:center">مصروفي 1.0</p>`;
+      <p class="hint" style="text-align:center">مصروفي 1.1</p>`;
     $$('[data-theme-opt]', el).forEach(b => b.addEventListener('click', () => { S.settings.theme = b.dataset.themeOpt; save(); applyTheme(); renderSet(); }));
     $('#setBudget', el).addEventListener('change', e => { S.budget.monthly = Math.max(0, parseFloat(MasroofyParser.normalize(e.target.value)) || 0); save(); toast('اتحفظت الميزانية'); });
     $('#setDefAcc', el).addEventListener('change', e => { S.settings.defaultAccount = e.target.value; save(); });
     $('#setCur', el).addEventListener('change', e => { S.settings.currency = e.target.value.trim() || 'ج.م'; save(); });
     $('#setAuto', el).addEventListener('click', () => { S.settings.autoSave = !S.settings.autoSave; save(); renderSet(); });
+    $('#setHide', el).addEventListener('click', () => { S.settings.hide = !S.settings.hide; save(); renderSet(); });
+    const rem = $('#setRem', el); if (rem) rem.addEventListener('click', async () => { S.settings.reminder.on = !S.settings.reminder.on; save(); await scheduleReminder(true); renderSet(); });
+    const remT = $('#setRemTime', el); if (remT) remT.addEventListener('change', async () => { S.settings.reminder.time = remT.value || '21:00'; save(); await scheduleReminder(true); });
+    $('#addRec', el).addEventListener('click', () => openTxSheet({ repeat: true }));
+    $$('[data-rec]', el).forEach(b => b.addEventListener('click', () => openRecSheet(S.recurring.find(r => r.id === b.dataset.rec))));
     $$('[data-edit-cat]', el).forEach(b => b.addEventListener('click', () => openCatSheet(catById(b.dataset.editCat))));
     $('#addCat', el).addEventListener('click', () => openCatSheet(null));
     $('#expCsv', el).addEventListener('click', exportCsv);
     $('#expJson', el).addEventListener('click', exportJson);
     $('#impJson', el).addEventListener('click', () => $('#importFile').click());
     $('#wipe', el).addEventListener('click', async () => {
-      if (await confirmSheet('تمسح كل البيانات؟', 'كل العمليات والحسابات هتتمسح ومش هترجع. اعمل نسخة احتياطية الأول لو محتاجها.', 'امسح كله')) { S = fresh(); save(); applyTheme(); toast('اتمسح كل حاجة'); go('home'); }
+      if (await confirmSheet('تمسح كل البيانات؟', 'كل العمليات والحسابات هتتمسح ومش هترجع. اعمل نسخة احتياطية الأول لو محتاجها.', 'امسح كله')) { S = fresh(); save(); applyTheme(); scheduleReminder(); toast('اتمسح كل حاجة'); go('home'); }
     });
   }
 
@@ -386,12 +449,13 @@
             <div class="field"><label for="fTo">إلى</label><select class="input" id="fTo">${accOptions(d.toAccountId)}</select></div></div>`
           : `<div class="field"><span class="lbl">التصنيف</span><div class="cat-grid">${cats.map(c => `<button class="cat-btn" data-cat="${esc(c.id)}" aria-pressed="${d.categoryId === c.id}"><span>${esc(c.icon)}</span><span>${esc(c.name)}</span></button>`).join('')}</div></div>
             <div class="field"><label for="fAcc">${d.type === 'income' ? 'دخل على' : 'دفعت من'}</label><select class="input" id="fAcc">${accOptions(d.accountId)}</select></div>`}
+        ${isNew ? `<label class="toggle"><span><div>تتكرر كل شهر</div><div class="d">هتتسجل لوحدها في نفس اليوم من كل شهر</div></span><input type="checkbox" id="fRepeat" ${d.repeat ? 'checked' : ''}></label>` : ''}
         <div class="row2">
           <div class="field"><label for="fDate">التاريخ</label><input class="input" type="date" id="fDate" value="${esc(d.date)}"></div>
           <div class="field"><label for="fNote">ملاحظة</label><input class="input" id="fNote" value="${esc(d.note)}" placeholder="مثلاً: غدا مع الشغل"></div>
         </div>
         <div class="actions">${isNew ? '' : '<button class="btn danger" id="fDel">حذف</button>'}<button class="btn primary" id="fSave">${isNew ? 'حفظ' : 'حفظ التعديل'}</button></div>`;
-      const sync = () => { d.amount = $('#fAmount', sh).value; d.accountId = $('#fAcc', sh).value; d.date = $('#fDate', sh).value || today(); d.note = $('#fNote', sh).value; if ($('#fTo', sh)) d.toAccountId = $('#fTo', sh).value; };
+      const sync = () => { if ($('#fRepeat', sh)) d.repeat = $('#fRepeat', sh).checked; d.amount = $('#fAmount', sh).value; d.accountId = $('#fAcc', sh).value; d.date = $('#fDate', sh).value || today(); d.note = $('#fNote', sh).value; if ($('#fTo', sh)) d.toAccountId = $('#fTo', sh).value; };
       $$('[data-type]', sh).forEach(b => b.onclick = () => { sync(); d.type = b.dataset.type; if (d.type === 'transfer' && (!d.toAccountId || d.toAccountId === d.accountId)) d.toAccountId = (S.accounts.find(a => a.id !== d.accountId) || {}).id; draw(sh); });
       $$('[data-cat]', sh).forEach(b => b.onclick = () => { d.categoryId = b.dataset.cat; $$('[data-cat]', sh).forEach(x => x.setAttribute('aria-pressed', String(x === b))); });
       $('#fSave', sh).onclick = () => {
@@ -405,7 +469,13 @@
           if (old && old.source === 'voice' && old.categoryId !== rec.categoryId && rec.categoryId) learn(rec);
           Object.assign(old, rec);
         } else S.txns.push(rec);
-        save(); closeSheet(); render(); toast(isNew ? 'اتسجلت ✓' : 'اتعدلت ✓');
+        let msg = isNew ? 'اتسجلت ✓' : 'اتعدلت ✓';
+        if (isNew && d.repeat) {
+          const r = { id: uid(), type: rec.type, amount: rec.amount, categoryId: rec.categoryId, accountId: rec.accountId, toAccountId: rec.toAccountId, note: rec.note, day: +rec.date.slice(8, 10), last: rec.date.slice(0, 7) };
+          S.recurring.push(r); rec.recurringId = r.id; rec.source = 'recurring';
+          msg = `اتسجلت ✓ وهتتكرر يوم ${r.day} كل شهر`;
+        }
+        save(); closeSheet(); render(); toast(msg);
         opts.onSaved && opts.onSaved(rec);
       };
       const del = $('#fDel', sh);
@@ -468,13 +538,14 @@
       <div class="field"><label for="cIcon">أيقونة (إيموجي)</label><input class="input" id="cIcon" value="${esc(c.icon)}" maxlength="4" style="text-align:center"></div></div>
       <div class="field"><label for="cKind">النوع</label><select class="input" id="cKind"><option value="expense" ${c.kind === 'expense' ? 'selected' : ''}>مصروف</option><option value="income" ${c.kind === 'income' ? 'selected' : ''}>دخل</option></select></div>
       <div class="field"><span class="lbl">اللون</span><div style="display:flex;gap:8px;flex-wrap:wrap" id="cColors">${colors.map(x => `<button data-color="${x}" aria-label="لون" style="width:30px;height:30px;border-radius:50%;background:${x};border:3px solid ${x === c.color ? 'var(--fg)' : 'transparent'}"></button>`).join('')}</div></div>
+      <div class="field"><label for="cBudget">حد الصرف الشهري للتصنيف ده (اختياري، للمصاريف بس)</label><input class="input num" id="cBudget" inputmode="decimal" value="${c.budget || ''}" placeholder="مثلاً 3000"></div>
       <div class="field"><label for="cKw">الكلمات اللي لما تقولها تتحط هنا (افصل بفاصلة)</label><textarea class="input" id="cKw" rows="3">${esc((c.keywords || []).join('، '))}</textarea></div>
       <div class="actions">${isNew || c.fallback ? '' : '<button class="btn danger" id="cDel">حذف</button>'}<button class="btn primary" id="cSave">حفظ</button></div>`, sh => {
       $$('[data-color]', sh).forEach(b => b.onclick = () => { c.color = b.dataset.color; $$('[data-color]', sh).forEach(x => x.style.borderColor = x === b ? 'var(--fg)' : 'transparent'); });
       $('#cSave', sh).onclick = () => {
         const name = $('#cName', sh).value.trim(); if (!name) { toast('اكتب اسم التصنيف'); return; }
         const rec = isNew ? { id: uid() } : cat;
-        Object.assign(rec, { name, icon: $('#cIcon', sh).value.trim() || '🏷️', kind: $('#cKind', sh).value, color: c.color, keywords: $('#cKw', sh).value.split(/[،,\n]/).map(s => s.trim()).filter(Boolean) });
+        Object.assign(rec, { name, icon: $('#cIcon', sh).value.trim() || '🏷️', kind: $('#cKind', sh).value, color: c.color, budget: Math.max(0, parseFloat(MasroofyParser.normalize($('#cBudget', sh).value)) || 0), keywords: $('#cKw', sh).value.split(/[،,\n]/).map(s => s.trim()).filter(Boolean) });
         if (isNew) S.categories.push(rec);
         save(); closeSheet(); render(); toast('اتحفظ التصنيف');
       };
@@ -489,6 +560,65 @@
         }
       };
     });
+  }
+
+  /* ---------- العمليات المتكرره ---------- */
+  function openRecSheet(r) {
+    if (!r) return;
+    openSheet(`<h3>عملية متكررة</h3>
+      <div class="field"><label for="rAmount">المبلغ (${esc(S.settings.currency)})</label><input class="input amount-input" id="rAmount" inputmode="decimal" value="${r.amount}"></div>
+      <div class="row2"><div class="field"><label for="rDay">يوم كام في الشهر</label><input class="input num" id="rDay" inputmode="numeric" value="${r.day}"></div>
+      <div class="field"><label for="rNote">ملاحظة</label><input class="input" id="rNote" value="${esc(r.note)}"></div></div>
+      <p class="hint">التعديل هنا بيأثر على الشهور الجاية بس، مش على اللي اتسجل قبل كده.</p>
+      <div class="actions"><button class="btn danger" id="rDel">وقّف التكرار</button><button class="btn primary" id="rSave">حفظ</button></div>`, sh => {
+      $('#rSave', sh).onclick = () => {
+        const amt = parseFloat(MasroofyParser.wordsToNumbers(MasroofyParser.normalize($('#rAmount', sh).value)).replace(/[^\d.]/g, ''));
+        const day = parseInt(MasroofyParser.normalize($('#rDay', sh).value), 10);
+        if (!(amt > 0)) { toast('اكتب المبلغ الأول'); return; }
+        if (!(day >= 1 && day <= 31)) { toast('اليوم لازم يكون من 1 لـ 31'); return; }
+        Object.assign(r, { amount: amt, day, note: $('#rNote', sh).value.trim() });
+        save(); closeSheet(); render(); toast('اتحفظ ✓');
+      };
+      $('#rDel', sh).onclick = async () => {
+        if (await confirmSheet('توقف التكرار؟', 'العمليات اللي اتسجلت قبل كده هتفضل زي ما هي، بس مش هتتسجل تاني.', 'وقّف')) {
+          S.recurring = S.recurring.filter(x => x.id !== r.id); save(); render(); toast('وقفت التكرار');
+        }
+      };
+    });
+  }
+
+  // يسجل اي عمليه متكرره جه معادها (حتى لو التطبيق كان مقفول شهور)
+  function runRecurring() {
+    const now = new Date(); const nowKey = monthKey(now.getFullYear(), now.getMonth());
+    let added = 0;
+    S.recurring.forEach(r => {
+      let [y, m] = r.last.split('-').map(Number); m -= 1;
+      for (let guard = 0; guard < 36; guard++) {
+        m++; if (m > 11) { m = 0; y++; }
+        const key = monthKey(y, m);
+        if (key > nowKey) break;
+        const day = Math.min(r.day, new Date(y, m + 1, 0).getDate());
+        if (key === nowKey && now.getDate() < day) break;
+        S.txns.push({ id: uid(), type: r.type, amount: r.amount, categoryId: r.categoryId, accountId: r.accountId, toAccountId: r.toAccountId, date: key + '-' + String(day).padStart(2, '0'), note: r.note, createdAt: new Date().toISOString(), source: 'recurring', recurringId: r.id });
+        r.last = key; added++;
+      }
+    });
+    if (added) { save(); render(); toast(added === 1 ? 'اتسجلت عملية متكررة 🔁' : `اتسجلت ${added} عمليات متكررة 🔁`); }
+  }
+
+  /* ---------- التذكير اليومي ---------- */
+  async function scheduleReminder(interactive) {
+    const LN = plugin('LocalNotifications'); if (!LN) return;
+    try {
+      await LN.cancel({ notifications: [{ id: 1 }] }).catch(() => {});
+      if (!S.settings.reminder.on) return;
+      let perm = await LN.checkPermissions();
+      if (perm.display !== 'granted' && interactive) perm = await LN.requestPermissions();
+      if (perm.display !== 'granted') { S.settings.reminder.on = false; save(); if (interactive) toast('محتاج إذن الإشعارات عشان يفكرك'); return; }
+      const [hour, minute] = (S.settings.reminder.time || '21:00').split(':').map(Number);
+      await LN.schedule({ notifications: [{ id: 1, title: 'مصروفي', body: 'سجّلت مصاريف النهارده؟ دوس وقول اللي دفعته 🎙', schedule: { on: { hour, minute }, allowWhileIdle: true } }] });
+      if (interactive) toast(`هفكرك كل يوم الساعة ${esc(S.settings.reminder.time)}`);
+    } catch (e) { if (interactive) toast('مقدرتش أظبط التذكير'); }
   }
 
   /* ---------- التوست ---------- */
@@ -649,7 +779,7 @@
       const d = JSON.parse(await f.text());
       if (!Array.isArray(d.txns) || !Array.isArray(d.accounts)) throw new Error('bad');
       if (await confirmSheet('تسترجع النسخة دي؟', `فيها ${d.txns.length} عملية و${d.accounts.length} حساب. البيانات الحالية هتتبدل بيها.`, 'استرجع')) {
-        const f0 = fresh(); S = Object.assign(f0, d, { settings: Object.assign(f0.settings, d.settings || {}), budget: Object.assign(f0.budget, d.budget || {}) }); save(); applyTheme(); render(); toast('اترجعت البيانات ✓');
+        S = merge(d); save(); applyTheme(); runRecurring(); scheduleReminder(); render(); toast('اترجعت البيانات ✓');
       }
     } catch (err) { toast('الملف ده مش نسخة احتياطية من مصروفي'); }
   });
@@ -670,6 +800,9 @@
   /* ---------- تشغيل ---------- */
   applyTheme();
   go('home');
+  runRecurring();
+  scheduleReminder();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { runRecurring(); render(); } });
   if ('serviceWorker' in navigator && !isNative && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
