@@ -1,30 +1,122 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // --- Codes Collection ---
-    match /codes/{codeId} {
-      allow read, write: if true;
+
+    // ---------- Helpers ----------
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // --- Users Collection ---
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    // The platform owner is always an admin, even before a profile exists.
+    function isOwner() {
+      return signedIn()
+        && request.auth.token.email == 'khalafehab07@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function hasProfile() {
+      return signedIn() && exists(userPath(request.auth.uid));
+    }
+
+    function profile() {
+      return get(userPath(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isOwner() || (hasProfile() && profile().role == 'admin');
+    }
+
+    // Approved student whose subscription has not run out (or any admin).
+    function isActiveMember() {
+      return isAdmin() || (
+        hasProfile()
+        && profile().status == 'approved'
+        && profile().get('subscriptionEndsAt', null) != null
+        && profile().subscriptionEndsAt > request.time
+      );
+    }
+
+    // A student may approve themselves only in the same batch that marks an
+    // unused subscription code as used by them, and only for that code's duration.
+    function isCodeRedemption(userId) {
+      let codeId = request.resource.data.redeemedCode;
+      let codePath = /databases/$(database)/documents/codes/$(codeId);
+      return signedIn()
+        && request.auth.uid == userId
+        && codeId is string
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'subscriptionEndsAt', 'redeemedCode'])
+        && request.resource.data.status == 'approved'
+        && exists(codePath)
+        && get(codePath).data.isUsed == false
+        && getAfter(codePath).data.isUsed == true
+        && getAfter(codePath).data.usedBy == request.auth.uid
+        && request.resource.data.subscriptionEndsAt is timestamp
+        && request.resource.data.subscriptionEndsAt
+             <= request.time + duration.value(get(codePath).data.durationDays + 1, 'd');
+    }
+
+    // ---------- Users ----------
     match /users/{userId} {
-      allow read, write: if true;
+      allow get: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+
+      // Self-registration always starts as a pending student
+      // (the owner's own account is created as an approved admin).
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['fullName', 'email', 'role', 'status', 'year', 'group', 'createdAt'])
+        && request.resource.data.email == request.auth.token.email
+        && (
+          (request.resource.data.role == 'student' && request.resource.data.status == 'pending')
+          || (isOwner() && request.resource.data.role == 'admin' && request.resource.data.status == 'approved')
+        );
+
+      allow update: if isAdmin() || isCodeRedemption(userId);
+      allow delete: if isAdmin();
     }
 
-    // --- Contents Collection ---
-    match /contents/{contentId}/{document=**} {
-      allow read, write: if true;
+    // ---------- Subscription codes ----------
+    match /codes/{codeId} {
+      // Reading one code requires knowing it; only admins can list them.
+      allow get: if signedIn();
+      allow list, create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        signedIn()
+        && resource.data.isUsed == false
+        && request.resource.data.isUsed == true
+        && request.resource.data.usedBy == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isUsed', 'usedBy', 'usedAt'])
+      );
     }
 
-    // --- Notifications Collection ---
+    // ---------- Content ----------
+    match /contents/{contentId} {
+      // Titles / descriptions are visible to logged-in users.
+      allow read: if signedIn();
+      allow write: if isAdmin();
+
+      // The actual lecture files: only members with an active subscription.
+      match /chunks/{chunkId} {
+        allow read: if isActiveMember();
+        allow write: if isAdmin();
+      }
+    }
+
+    // ---------- Notifications ----------
     match /notifications/{notificationId} {
-      allow read, write: if true;
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
-    // --- Presence Collection ---
+    // ---------- Presence ----------
     match /presence/{userId} {
-      allow read, write: if true;
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
+      allow write: if signedIn() && request.auth.uid == userId;
     }
   }
 }

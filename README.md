@@ -1,20 +1,26 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# مكتبة المدينة: City Library
 
-# Run and deploy your AI Studio app
+منصة تعليمية محمية (فيديو، PDF، صوت) لطلاب مكتبة المدينة، تعمل كموقع وكتطبيق أندرويد.
 
-This contains everything you need to run your app locally.
+## الحماية
+- **تطبيق الأندرويد**: `FLAG_SECURE` يمنع السكرين شوت وتسجيل الشاشة والبث (يظهر أسود)، ويخفي المحتوى من قائمة التطبيقات الأخيرة. فحص الـ WebView مقفول والنسخ الاحتياطي مقفول.
+- **Firestore rules** (`firestore.rules`): ملفات المحاضرات لا يقرأها إلا طالب مفعّل اشتراكه ساري أو أدمن. الطالب لا يستطيع ترقية نفسه أو تفعيل حسابه إلا بكود اشتراك صالح غير مستخدم.
+- ملفات Google Drive أصبحت خاصة بالأدمن ولا تُشارك للعامة.
 
-View your app in AI Studio: https://ai.studio/apps/c6eaaec1-1710-4c84-8d1f-9c2ca79b37c8
+## التشغيل محلياً
+```
+npm install
+npm run dev        # الموقع + سيرفر المساعد الذكي (يحتاج GEMINI_API_KEY في .env.local)
+```
 
-## Run Locally
+## بناء الـ APK
+يتم تلقائياً على GitHub Actions مع كل push. الـ APK يظهر في صفحة الـ run تحت **Artifacts → CityLibrary-APK**.
 
-**Prerequisites:**  Node.js
+إعدادات مطلوبة مرة واحدة (Settings → Secrets and variables → Actions):
+| الاسم | النوع | الغرض |
+|---|---|---|
+| `ANDROID_KEYSTORE_BASE64` | Secret | مفتاح توقيع التطبيق (base64) |
+| `ANDROID_KEYSTORE_PASSWORD` | Secret | كلمة سر المفتاح |
+| `API_BASE_URL` | Variable (اختياري) | رابط السيرفر المنشور ليعمل المساعد الذكي داخل التطبيق |
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+ويجب إضافة تطبيق Android في Firebase Console بالـ package `com.citylibrary.app` وبصمة SHA-1 للمفتاح (تظهر في لوج الـ build) حتى يعمل تسجيل الدخول بجوجل داخل التطبيق.

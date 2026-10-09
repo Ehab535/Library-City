@@ -12,6 +12,21 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
+  // The Android app runs from https://localhost inside a WebView, so it is a
+  // cross-origin caller of this API.
+  const allowedOrigins = new Set(["https://localhost", "http://localhost", "capacitor://localhost"]);
+  app.use("/api", (req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.has(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    }
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+  });
+
   // Initialize Gemini AI client safely
   const getAiClient = () => {
     const apiKey = process.env.GEMINI_API_KEY;

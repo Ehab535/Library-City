@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mirrors firebase-applet-config.json (public client config, not secrets). -->
+<resources>
+    <string name="default_web_client_id" translatable="false">312446924218-ktskbqauj8076ra2seq9gib7fr62hh9p.apps.googleusercontent.com</string>
+    <string name="cl_firebase_api_key" translatable="false">AIzaSyDJvwmz3Eh1zLMsnQf5Ru0nxeKoyxqnrsc</string>
+    <string name="cl_firebase_app_id" translatable="false">1:312446924218:web:d01367d3789ad7b7cdd983</string>
+    <string name="cl_firebase_project_id" translatable="false">tuned-vision-w6shk</string>
+    <string name="cl_firebase_storage_bucket" translatable="false">tuned-vision-w6shk.firebasestorage.app</string>
+    <string name="cl_firebase_sender_id" translatable="false">312446924218</string>
+</resources>
